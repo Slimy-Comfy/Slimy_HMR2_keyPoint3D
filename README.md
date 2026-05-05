@@ -1,5 +1,8 @@
 # Slimy_HMR2_keyPoint3D
 
+<img width="1112" height="566" alt="rapture_20260506002423" src="https://github.com/user-attachments/assets/ffd0a559-4a5b-4ee1-aea3-e443622cb7ba" />
+<img width="253" height="275" alt="image" src="https://github.com/user-attachments/assets/58a28843-d094-4404-b646-79599f897671" />
+
 A 3D keypoint estimation node for ComfyUI, based on HMR2.0.  
 **No WSL2 or Ubuntu required. Runs natively on Windows ComfyUI Portable.**
 
