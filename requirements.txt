@@ -4,3 +4,4 @@ smplx==0.1.28
 pytorch-lightning
 einops
 yacs
+webdataset
