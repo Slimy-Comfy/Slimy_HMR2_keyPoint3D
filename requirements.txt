@@ -1,0 +1,6 @@
+ultralytics
+opencv-python
+smplx==0.1.28
+pytorch-lightning
+einops
+yacs
