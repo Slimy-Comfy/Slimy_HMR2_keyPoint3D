@@ -3,6 +3,8 @@ Slimy_HMR2_keyPoint3D — HMR2.0 3D pose estimator for ComfyUI (Windows Native)
 WSL2不要・Windows embedded Pythonで直接動作
 """
 
+import base64
+import io
 import json
 import os
 import tempfile
@@ -289,11 +291,18 @@ class VNCCS_HMR2KeyPoint3D:
         out_path  = out_dir / f"{output_filename}_{ts}.json"
         out_path.write_text(json_str, encoding="utf-8")
 
-        n = len(data.get("people", []))
+        n = len(people)
         print(f"[Slimy_HMR2_keyPoint3D] {n} 人検出。保存先 → {out_path}")
 
+        # サムネイル生成（長辺256px、アスペクト比維持）
+        thumb = pil_orig.copy()
+        thumb.thumbnail((256, 256), PILImage.LANCZOS)
+        buf = io.BytesIO()
+        thumb.convert("RGB").save(buf, format="JPEG", quality=85)
+        thumb_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+
         return {
-            "ui":     {"text": [json_str]},
+            "ui":     {"text": [json_str], "thumbnail_b64": [thumb_b64]},
             "result": (_to_tensor(pil_orig), _to_tensor(pil_skeleton), json_str),
         }
 
