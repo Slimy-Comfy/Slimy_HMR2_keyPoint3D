@@ -154,9 +154,9 @@ def _run_inference(img_np: np.ndarray, max_people: int) -> dict:
     # BGR変換（ComfyUIはRGB）
     img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
 
-    # YOLO人物検出
+    # YOLO人物検出（iou=0.45で重複bbox排除を強化）
     yolo = YOLO("yolov8n.pt")
-    results = yolo(img_bgr, classes=[0], verbose=False)
+    results = yolo(img_bgr, classes=[0], verbose=False, iou=0.45)
     boxes = []
     for r in results:
         for box in r.boxes:
@@ -185,6 +185,11 @@ def _run_inference(img_np: np.ndarray, max_people: int) -> dict:
         pred_joints    = out["pred_keypoints_3d"].cpu().numpy()
         pred_joints_2d = out["pred_keypoints_2d"].cpu().numpy()
 
+        # SMPLパラメータ取得（body_pose: (batch,23,3,3), global_orient: (batch,1,3,3)）
+        pred_smpl   = out["pred_smpl_params"]
+        body_poses  = pred_smpl["body_pose"].cpu().numpy()       # (batch, 23, 3, 3)
+        global_orients = pred_smpl["global_orient"].cpu().numpy() # (batch,  1, 3, 3)
+
         for i in range(batch_size_cur):
             joints3d      = pred_joints[i]
             joints2d_norm = pred_joints_2d[i]
@@ -209,11 +214,19 @@ def _run_inference(img_np: np.ndarray, max_people: int) -> dict:
             bbox = boxes[person_id] if person_id < len(boxes) else None
             bbox_norm = [bbox[0]/W, bbox[1]/H, bbox[2]/W, bbox[3]/H] if bbox else None
 
+            # body_pose: 23関節の回転行列をリストに変換 [[row0,row1,row2], ...]
+            body_pose_list = body_poses[i].tolist()   # (23, 3, 3)
+            global_orient_list = global_orients[i].tolist()  # (1, 3, 3)
+
             people.append({
                 "person_id":         person_id,
                 "bbox_norm":         bbox_norm,
                 "keypoints_3d":      kp3d,
                 "keypoints_2d_norm": joints2d_norm01,
+                "smpl_params": {
+                    "global_orient": global_orient_list,  # (1, 3, 3) 骨盤ワールド回転
+                    "body_pose":     body_pose_list,       # (23, 3, 3) 各関節ローカル回転行列
+                },
             })
             person_id += 1
 
@@ -234,8 +247,9 @@ class VNCCS_HMR2KeyPoint3D:
         return {
             "required": {
                 "image":           ("IMAGE",),
-                "person_index":    ("STRING", {"default": "0"}),
+                "person_index":    ("STRING", {"default": "1"}),
                 "output_filename": ("STRING", {"default": "hmr2_keypoint3d"}),
+                "output_format":   (["JSON", "PNG (with JSON)"], {"default": "JSON"}),
             }
         }
 
@@ -245,7 +259,7 @@ class VNCCS_HMR2KeyPoint3D:
     CATEGORY      = "Slimy/Pose"
     OUTPUT_NODE   = True
 
-    def estimate(self, image, person_index, output_filename):
+    def estimate(self, image, person_index, output_filename, output_format="JSON"):
 
         img_np = (image[0].cpu().numpy() * 255).astype(np.uint8)
         H, W   = img_np.shape[:2]
@@ -288,23 +302,33 @@ class VNCCS_HMR2KeyPoint3D:
         out_data = {**data, "people": people}
         json_str = json.dumps(out_data, ensure_ascii=False, indent=2)
         ts        = datetime.now().strftime("%Y%m%d_%H%M%S")
-        out_path  = out_dir / f"{output_filename}_{ts}.json"
-        out_path.write_text(json_str, encoding="utf-8")
 
-        n = len(people)
-        print(f"[Slimy_HMR2_keyPoint3D] {n} 人検出。保存先 → {out_path}")
-
-        # サムネイル生成（長辺256px、アスペクト比維持）
-        thumb = pil_orig.copy()
-        thumb.thumbnail((256, 256), PILImage.LANCZOS)
-        buf = io.BytesIO()
-        thumb.convert("RGB").save(buf, format="JPEG", quality=85)
-        thumb_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
-
-        return {
-            "ui":     {"text": [json_str], "thumbnail_b64": [thumb_b64]},
-            "result": (_to_tensor(pil_orig), _to_tensor(pil_skeleton), json_str),
-        }
+        if output_format == "JSON":
+            # テキストJSONをファイル保存
+            out_path = out_dir / f"{output_filename}_{ts}.json"
+            out_path.write_text(json_str, encoding="utf-8")
+            print(f"[Slimy_HMR2_keyPoint3D] {len(people)} 人検出。JSON保存先 → {out_path}")
+            return {
+                "ui":     {"text": [json_str], "thumbnail_b64": [], "output_format": ["JSON"]},
+                "result": (_to_tensor(pil_orig), _to_tensor(pil_skeleton), json_str),
+            }
+        else:
+            # PNG（tEXtチャンクにJSON埋め込み）をファイル保存
+            from PIL.PngImagePlugin import PngInfo
+            thumb = pil_orig.copy()
+            thumb.thumbnail((256, 256), PILImage.LANCZOS)
+            meta = PngInfo()
+            meta.add_text("hmr2_pose_json", json_str)
+            buf = io.BytesIO()
+            thumb.convert("RGB").save(buf, format="PNG", pnginfo=meta)
+            thumb_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+            out_path = out_dir / f"{output_filename}_{ts}.png"
+            out_path.write_bytes(base64.b64decode(thumb_b64))
+            print(f"[Slimy_HMR2_keyPoint3D] {len(people)} 人検出。PNG保存先 → {out_path}")
+            return {
+                "ui":     {"text": [json_str], "thumbnail_b64": [thumb_b64], "output_format": ["PNG"]},
+                "result": (_to_tensor(pil_orig), _to_tensor(pil_skeleton), json_str),
+            }
 
     @staticmethod
     def _err(image, msg: str):
