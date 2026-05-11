@@ -1,4 +1,9 @@
 # Slimy_HMR2_keyPoint3D
+> [!WARNING]
+> **First run:** Automatically downloads ~2.5 GB of model data, which may take a significant amount of time.
+> Also, you will need to download the model data from a specific site. Please read the instructions below carefully.
+> After that, inference runs in approximately 6 seconds.
+
 
 <img width="1112" height="566" alt="rapture_20260506002423" src="https://github.com/user-attachments/assets/ffd0a559-4a5b-4ee1-aea3-e443622cb7ba" />
 <img width="253" height="275" alt="image" src="https://github.com/user-attachments/assets/58a28843-d094-4404-b646-79599f897671" />
