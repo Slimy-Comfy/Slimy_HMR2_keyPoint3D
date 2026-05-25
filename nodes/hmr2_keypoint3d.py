@@ -51,40 +51,64 @@ JOINT_NAMES = [
 ]
 
 
-# ── 骨格描画 ──────────────────────────────────────────────────────────────────
+# ── OpenPose Body25 公式カラー（poseParametersRender.hpp準拠） ──────────────
+# インデックスはJOINT_NAMESの順番に対応
+_JOINT_COLORS = [
+    (255,   0,  85),   # 0  nose
+    (255,   0,   0),   # 1  neck
+    (255,  85,   0),   # 2  right_shoulder
+    (255, 170,   0),   # 3  right_elbow
+    (255, 255,   0),   # 4  right_wrist
+    (170, 255,   0),   # 5  left_shoulder
+    ( 85, 255,   0),   # 6  left_elbow
+    (  0, 255,   0),   # 7  left_wrist
+    (255,   0,   0),   # 8  pelvis
+    (  0, 255,  85),   # 9  right_hip
+    (  0, 255, 170),   # 10 right_knee
+    (  0, 255, 255),   # 11 right_ankle
+    (  0, 170, 255),   # 12 left_hip
+    (  0,  85, 255),   # 13 left_knee
+    (  0,   0, 255),   # 14 left_ankle
+    (255,   0, 170),   # 15 right_eye
+    (170,   0, 255),   # 16 left_eye
+    (255,   0, 255),   # 17 right_ear
+    ( 85,   0, 255),   # 18 left_ear
+    (  0,   0, 255),   # 19 left_big_toe
+    (  0,   0, 255),   # 20 left_small_toe
+    (  0,   0, 255),   # 21 left_heel
+    (  0, 255, 255),   # 22 right_big_toe
+    (  0, 255, 255),   # 23 right_small_toe
+    (  0, 255, 255),   # 24 right_heel
+]
 
-_C = {
-    'body':  (204, 204, 204),
-    'left':  ( 68, 136, 255),
-    'right': (255,  68,  68),
-}
+_JOINT_INDEX = {name: i for i, name in enumerate(JOINT_NAMES)}
 
-_LEFT_NAMES  = {"left_shoulder", "left_elbow", "left_wrist", "left_hip", "left_knee", "left_ankle",
-                "left_eye", "left_ear", "left_big_toe", "left_small_toe", "left_heel"}
-_RIGHT_NAMES = {"right_shoulder", "right_elbow", "right_wrist", "right_hip", "right_knee", "right_ankle",
-                "right_eye", "right_ear", "right_big_toe", "right_small_toe", "right_heel"}
-
+# 接続ペア（Body25準拠）: (joint_a, joint_b)
 _CONNS = [
-    ("nose",           "right_eye",      'right'),
-    ("nose",           "left_eye",       'left'),
-    ("right_eye",      "right_ear",      'right'),
-    ("left_eye",       "left_ear",       'left'),
-    ("nose",           "neck",           'body'),
-    ("neck",           "right_shoulder", 'right'),
-    ("neck",           "left_shoulder",  'left'),
-    ("right_shoulder", "right_elbow",    'right'),
-    ("right_elbow",    "right_wrist",    'right'),
-    ("left_shoulder",  "left_elbow",     'left'),
-    ("left_elbow",     "left_wrist",     'left'),
-    ("neck",           "pelvis",         'body'),
-    ("right_shoulder", "right_hip",      'right'),
-    ("left_shoulder",  "left_hip",       'left'),
-    ("pelvis",         "right_hip",      'right'),
-    ("pelvis",         "left_hip",       'left'),
-    ("right_hip",      "right_knee",     'right'),
-    ("right_knee",     "right_ankle",    'right'),
-    ("left_hip",       "left_knee",      'left'),
-    ("left_knee",      "left_ankle",     'left'),
+    ("pelvis",         "neck"),
+    ("neck",           "right_shoulder"),
+    ("neck",           "left_shoulder"),
+    ("right_shoulder", "right_elbow"),
+    ("right_elbow",    "right_wrist"),
+    ("left_shoulder",  "left_elbow"),
+    ("left_elbow",     "left_wrist"),
+    ("pelvis",         "right_hip"),
+    ("right_hip",      "right_knee"),
+    ("right_knee",     "right_ankle"),
+    ("pelvis",         "left_hip"),
+    ("left_hip",       "left_knee"),
+    ("left_knee",      "left_ankle"),
+    ("neck",           "nose"),
+    ("nose",           "right_eye"),
+    ("right_eye",      "right_ear"),
+    ("nose",           "left_eye"),
+    ("left_eye",       "left_ear"),
+    ("left_ankle",     "left_big_toe"),
+    ("left_big_toe",   "left_small_toe"),
+    ("left_ankle",     "left_heel"),
+    ("right_ankle",    "right_big_toe"),
+    ("right_big_toe",  "right_small_toe"),
+    ("right_ankle",    "right_heel"),
 ]
 
 
@@ -96,25 +120,51 @@ def _get_pts(person: dict, W: int, H: int) -> dict:
     return pts
 
 
+def _lerp_color(c1, c2, t):
+    """2色をt(0.0-1.0)で線形補間"""
+    return (
+        int(c1[0] + (c2[0] - c1[0]) * t),
+        int(c1[1] + (c2[1] - c1[1]) * t),
+        int(c1[2] + (c2[2] - c1[2]) * t),
+    )
+
+
 def _draw_skeleton(canvas: PILImage.Image, person: dict, W: int, H: int):
     draw = ImageDraw.Draw(canvas)
-    lw   = max(2, min(W, H) // 200)
-    jr   = max(3, min(W, H) // 150)
+    lw   = max(2, min(W, H) // 150)
+    jr   = max(4, min(W, H) // 100)
     pts  = _get_pts(person, W, H)
 
-    for a, b, ck in _CONNS:
-        if a in pts and b in pts:
-            ax, ay = pts[a]
-            bx, by = pts[b]
-            if 0 <= ax < W and 0 <= ay < H and 0 <= bx < W and 0 <= by < H:
-                draw.line([pts[a], pts[b]], fill=_C[ck], width=lw)
+    # 接続線をグラデーションで描画（両端の関節色を線形補間）
+    segments = 10  # グラデーションの分割数
+    for a, b in _CONNS:
+        if a not in pts or b not in pts:
+            continue
+        ax, ay = pts[a]
+        bx, by = pts[b]
+        if not (0 <= ax < W and 0 <= ay < H and 0 <= bx < W and 0 <= by < H):
+            continue
+        ca = _JOINT_COLORS[_JOINT_INDEX[a]]
+        cb = _JOINT_COLORS[_JOINT_INDEX[b]]
+        for s in range(segments):
+            t0 = s / segments
+            t1 = (s + 1) / segments
+            x0 = ax + (bx - ax) * t0
+            y0 = ay + (by - ay) * t0
+            x1 = ax + (bx - ax) * t1
+            y1 = ay + (by - ay) * t1
+            color = _lerp_color(ca, cb, (t0 + t1) / 2)
+            draw.line([(x0, y0), (x1, y1)], fill=color, width=lw)
 
+    # 関節点を描画
     for name, pt in pts.items():
         x, y = pt
         if not (0 <= x < W and 0 <= y < H):
             continue
-        color = _C['left'] if name in _LEFT_NAMES else \
-                _C['right'] if name in _RIGHT_NAMES else _C['body']
+        idx = _JOINT_INDEX.get(name)
+        if idx is None:
+            continue
+        color = _JOINT_COLORS[idx]
         draw.ellipse([x - jr, y - jr, x + jr, y + jr], fill=color)
 
 
@@ -304,7 +354,6 @@ class VNCCS_HMR2KeyPoint3D:
         ts        = datetime.now().strftime("%Y%m%d_%H%M%S")
 
         if output_format == "JSON":
-            # テキストJSONをファイル保存
             out_path = out_dir / f"{output_filename}_{ts}.json"
             out_path.write_text(json_str, encoding="utf-8")
             print(f"[Slimy_HMR2_keyPoint3D] {len(people)} 人検出。JSON保存先 → {out_path}")
@@ -313,7 +362,6 @@ class VNCCS_HMR2KeyPoint3D:
                 "result": (_to_tensor(pil_orig), _to_tensor(pil_skeleton), json_str),
             }
         else:
-            # PNG（tEXtチャンクにJSON埋め込み）をファイル保存
             from PIL.PngImagePlugin import PngInfo
             thumb = pil_orig.copy()
             thumb.thumbnail((256, 256), PILImage.LANCZOS)

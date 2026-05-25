@@ -2,6 +2,9 @@ ultralytics
 opencv-python
 smplx==0.1.28
 pytorch-lightning
+lightning_utilities
+torchmetrics
 einops
 yacs
 webdataset
+chumpy-fix

@@ -1,8 +1,9 @@
-import os
+﻿import os
 from typing import Dict
 from yacs.config import CfgNode as CN
 
-CACHE_DIR = os.path.join(os.environ.get("HOME"), ".cache")
+_home = os.environ.get("HOME") or os.environ.get("USERPROFILE") or str(__import__("pathlib").Path.home())
+CACHE_DIR = os.path.join(_home, ".cache")
 CACHE_DIR_4DHUMANS = os.environ.get("HMR2_CACHE_DIR") or os.path.join(CACHE_DIR, "4DHumans")
 
 def to_lower(x: Dict) -> Dict:
@@ -114,3 +115,4 @@ def get_config(config_file: str, merge: bool = True, update_cachedir: bool = Fal
 
     cfg.freeze()
     return cfg
+
